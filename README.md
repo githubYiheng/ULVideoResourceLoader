@@ -5,4 +5,5 @@
 ```Objective-C ULAVAssetResourceLoader *resourceLoader = [[ULAVAssetResourceLoader alloc]init];
 
 AVPlayerItem *playerItem = [resourceLoader playerItemWithURL:self.videoUrl];
+
 ```
