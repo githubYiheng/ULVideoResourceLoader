@@ -16,16 +16,30 @@ static NSString *kDownloadedContentLength = @"kDownloadedContentLength";
 
 @implementation ULAVAssetCacheFileConfig
 
-+ (instancetype)loadCacheConfigWithPath:(NSString *)filePath{
++ (instancetype)loadCacheConfigWithPath:(NSString *)filePath {
     NSString *path = [self configurationFilePathForFilePath:filePath];
     ULAVAssetCacheFileConfig *configuration = [NSKeyedUnarchiver unarchiveObjectWithFile:path];
+    configuration.configFilePath = path;
     if (!configuration) {
         configuration = [[self alloc] init];
     }
     return configuration;
 }
 
-- (void)saveWithPath:(NSString *)filePath{
+- (void)deleteConfigFile {
+    if (!self.configFilePath.length) {
+        return;
+    }
+    NSFileManager *fileMgr = [[NSFileManager alloc] init];
+    NSError *error = nil;
+    BOOL removeSuccess = [fileMgr removeItemAtPath:self.configFilePath error:&error];
+    if (!removeSuccess) {
+        // Error handling
+        NSLog(@"Delete cache error %@",error.description);
+    }
+}
+
+- (void)saveWithPath:(NSString *)filePath {
     @synchronized (self) {
         NSString *path = [ULAVAssetCacheFileConfig configurationFilePathForFilePath:filePath];
         [NSKeyedArchiver archiveRootObject:self toFile:path];

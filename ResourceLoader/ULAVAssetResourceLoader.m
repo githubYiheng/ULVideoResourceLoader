@@ -16,6 +16,7 @@
 
 @property (nonatomic, strong) dispatch_queue_t operationQueue;
 
+@property (nonatomic, strong) AVURLAsset *urlAsset;
 @end
 
 @implementation ULAVAssetResourceLoader
@@ -33,24 +34,38 @@
 #pragma mark - Open
 
 - (AVPlayerItem *)playerItemWithURL:(NSURL *)url {
+    if (_urlAsset) {
+        [self cancel];
+    }
+    
     NSURL *assetURL = [self assetURLWithURL:url];
     
-    AVURLAsset *urlAsset = [AVURLAsset URLAssetWithURL:assetURL options:nil];
-    [urlAsset.resourceLoader setDelegate:self queue:self.operationQueue];
+    _urlAsset = [AVURLAsset URLAssetWithURL:assetURL options:nil];
+    [_urlAsset.resourceLoader setDelegate:self queue:self.operationQueue];
     
-    AVPlayerItem *playerItem = [AVPlayerItem playerItemWithAsset:urlAsset];
+    AVPlayerItem *playerItem = [AVPlayerItem playerItemWithAsset:_urlAsset];
     if ([playerItem respondsToSelector:@selector(setCanUseNetworkResourcesForLiveStreamingWhilePaused:)]) {
         playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = YES;
     }
     return playerItem;
 }
 
-- (void)cancel{
+- (void)cancel {
+    [_urlAsset.resourceLoader setDelegate:nil queue:self.operationQueue];
+    _urlAsset = nil;
+    
     [self.sessionTaskSet enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, ULAVAssetSessionTask * _Nonnull obj, BOOL * _Nonnull stop) {
         [obj cancel];
     }];
     
     [self.sessionTaskSet removeAllObjects];
+}
+
+- (void)removeCache {
+    [self.sessionTaskSet enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, ULAVAssetSessionTask * _Nonnull obj, BOOL * _Nonnull stop) {
+        [obj removeCache];
+        *stop = YES;
+    }];
 }
 
 #pragma mark - Private

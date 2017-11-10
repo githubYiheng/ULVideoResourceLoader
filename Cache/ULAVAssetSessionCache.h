@@ -39,7 +39,15 @@
 /// 保存缓存配置文件
 - (void)saveConfig;
 
+- (void)deleteCache;
+
 /// 当前缓存是否可用
 - (BOOL)cacheAvailable;
+
+/// 清空全部
++ (void)ul_clearCache;
+
+/// 返回缓存文件夹大小,m单位
++ (float)ul_getCacheSize;
 
 @end

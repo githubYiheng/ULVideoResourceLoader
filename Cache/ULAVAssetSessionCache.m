@@ -18,6 +18,7 @@
 @property (nonatomic, strong) NSString *cachePath;
 
 @property (nonatomic, assign) long long cachefileSize;
+@property (nonatomic, assign) BOOL isCancel;
 
 @end
 
@@ -25,7 +26,7 @@
 
 - (void)dealloc{
     NSLog(@"%s",__func__);
-    
+    _isCancel = YES;
     [self.writeFileHandle closeFile];
     [self.readFileHandle closeFile];
 }
@@ -33,25 +34,56 @@
 #pragma mark - Open
 
 - (BOOL)cacheAvailable{
-    
-    NSString *md5 = [[self.readFileHandle readDataToEndOfFile] MD5];
-    if ([md5 isEqualToString:self.config.md5]) {
-        return YES;
+    @try {
+        NSString *md5 = [[self.readFileHandle readDataToEndOfFile] MD5];
+        if ([md5 isEqualToString:self.config.md5]) {
+            return YES;
+        }
+        return NO;
+    } @catch (NSException *exception) {
+        NSLog(@"read cached data error %@",exception);
     }
-    return NO;
+    
 }
 
 - (void)save {
     [self.writeFileHandle synchronizeFile];
 }
 
+- (void)deleteCache {
+    if (!self.cachePath.length) {
+        return;
+    }
+    self.isCancel = YES;
+    
+    [self.readFileHandle closeFile];
+    [self.writeFileHandle closeFile];
+    
+    NSFileManager *fileMgr = [[NSFileManager alloc] init];
+    NSError *error = nil;
+    BOOL removeSuccess = [fileMgr removeItemAtPath:self.cachePath error:&error];
+    if (!removeSuccess) {
+        // Error handling
+        NSLog(@"Delete cache error %@",error.description);
+    }else{
+        [self.config deleteConfigFile];
+    }
+    self.isCancel = NO;
+}
+
 - (void)saveConfig{
+    if (_isCancel) {
+        return;
+    }
     NSData *data = [NSData dataWithContentsOfFile:self.cachePath];
     self.config.md5 = [data MD5];
     [self.config saveWithPath:self.cachePath];
 }
 
 - (void)cacheData:(NSData *)data range:(NSRange)range{
+    if (_isCancel) {
+        return;
+    }
     @try {
         [self.writeFileHandle seekToFileOffset:range.location];
         [self.writeFileHandle writeData:data];
@@ -150,6 +182,50 @@
         self.config = [ULAVAssetCacheFileConfig loadCacheConfigWithPath:self.cachePath];
     }
     return self;
+}
+
++ (void)ul_clearCache{
+    NSString *folderPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"UPLiveMedia"];
+    NSFileManager *fileMgr = [[NSFileManager alloc] init];
+    NSError *error = nil;
+    NSArray *directoryContents = [fileMgr contentsOfDirectoryAtPath:folderPath error:&error];
+    if (error == nil) {
+        for (NSString *path in directoryContents) {
+            NSString *fullPath = [folderPath stringByAppendingPathComponent:path];
+            BOOL removeSuccess = [fileMgr removeItemAtPath:fullPath error:&error];
+            if (!removeSuccess) {
+                // Error handling
+            }
+        }
+    } else {
+        // Error handling
+    }
+}
+
++ (float)ul_getCacheSize{
+    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:@"UPLiveMedia"];
+    return [self folderSizeAtPath:path];
+}
+
++ (long long)fileSizeAtPath:(NSString*)filePath{
+    NSFileManager* manager = [NSFileManager defaultManager];
+    if ([manager fileExistsAtPath:filePath]){
+        return [[manager attributesOfItemAtPath:filePath error:nil] fileSize];
+    }
+    return 0;
+}
+
++ (float)folderSizeAtPath:(NSString*)folderPath{
+    NSFileManager* manager = [NSFileManager defaultManager];
+    if (![manager fileExistsAtPath:folderPath]) return 0;
+    NSEnumerator *childFilesEnumerator = [[manager subpathsAtPath:folderPath] objectEnumerator];
+    NSString* fileName;
+    long long folderSize = 0;
+    while ((fileName = [childFilesEnumerator nextObject]) != nil){
+        NSString* fileAbsolutePath = [folderPath stringByAppendingPathComponent:fileName];
+        folderSize += [self fileSizeAtPath:fileAbsolutePath];
+    }
+    return folderSize/(1024.0*1024.0);
 }
 
 @end

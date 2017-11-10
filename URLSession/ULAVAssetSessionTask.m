@@ -10,7 +10,7 @@
 #import <MobileCoreServices/MobileCoreServices.h>
 #import "ULAVAssetSessionCache.h"
 
-static NSInteger kBufferSize = 10 * 1024;
+static NSInteger kBufferSize = 80 * 1024;
 
 @interface ULAVAssetSessionTask ()<NSURLSessionDataDelegate>
 
@@ -48,7 +48,7 @@ static NSInteger kBufferSize = 10 * 1024;
 
 - (void)resume{
     AVAssetResourceLoadingDataRequest *dataRequest = self.loadingRequest.dataRequest;
-    long long offset = dataRequest.requestedOffset;
+    unsigned long long offset = dataRequest.requestedOffset;
     if (dataRequest.currentOffset != 0) {
         offset = dataRequest.currentOffset;
     }
@@ -64,19 +64,27 @@ static NSInteger kBufferSize = 10 * 1024;
             [self.loadingRequest finishLoading];
         }
     }else{
+        /// 配置本次请求资源的起点和长度
+        unsigned long long length = offset + dataRequest.requestedLength - 1;
+        
         /// 去网络请求数据给播放器
         NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:self.originURL];
         request.cachePolicy = NSURLRequestReloadIgnoringLocalAndRemoteCacheData;
+        request.timeoutInterval = 15;
         
-        /// 配置本次请求资源的起点和长度
-        NSString *rangeStr = [NSString stringWithFormat:@"bytes=%zd-%zd", offset, offset + dataRequest.requestedLength - 1];
+        if (length < 5) {
+            request.timeoutInterval = 10;
+        }
+        
+        NSString *rangeStr = [NSString stringWithFormat:@"bytes=%lld-%lld", offset, length];
         [request setValue:rangeStr forHTTPHeaderField:@"Range"];
-        
         /// 设置缓存起点
         self.startOffset = offset;
         
         NSURLSessionTask *task = [self.session dataTaskWithRequest:request];
         [task resume];
+        
+        NSLog(@"ULVideoPlayer 发起请求 DataRange:%@",rangeStr);
     }
 }
 
@@ -88,13 +96,22 @@ static NSInteger kBufferSize = 10 * 1024;
     
     if (self.session) {
         [self.session invalidateAndCancel];
+        self.session = nil;
     }
     
     /// 完成本次请求，返回一个取消类型的error
     if (!self.loadingRequest.isFinished) {
         [self.loadingRequest finishLoadingWithError:[self loaderCancelledError]];
+        [self.sessionCache deleteCache];
     }
-    
+}
+
+- (void)removeCache {
+    @try {
+        [self.sessionCache deleteCache];
+    } @catch (NSException *exception) {
+        NSLog(@"remove cached data error %@",exception);
+    }
 }
 
 - (instancetype)initWithRequest:(AVAssetResourceLoadingRequest *)request{
@@ -129,6 +146,7 @@ static NSInteger kBufferSize = 10 * 1024;
         contentInformationRequest.byteRangeAccessSupported = self.sessionCache.config.byteRangeAccessSupported;
         contentInformationRequest.contentLength = self.sessionCache.config.contentLength;//18584541;
         contentInformationRequest.contentType = self.sessionCache.config.contentType;
+        NSLog(@"ULVideoPlayer 收到响应填充数据");
     }
 }
 
@@ -167,7 +185,7 @@ static NSInteger kBufferSize = 10 * 1024;
 #pragma mark - NSURLSessionDataDelegate
 
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
-    NSLog(@"%s",__func__);
+    NSLog(@"ULVideoPlayer 收到响应");
     if (self.isCancelled) {
         return;
     }
@@ -188,13 +206,13 @@ static NSInteger kBufferSize = 10 * 1024;
 }
 
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
-//    NSLog(@"%s",__func__);
     if (self.isCancelled) {
         return;
     }
     
     [self.bufferData appendData:data];
     
+    NSLog(@"ULVideoPlayer 接收数据 %zd",self.bufferData.length);
     /// 大于kBufferSize再给播放器，直接给也可以，当前设置的10k
     if (self.bufferData.length > kBufferSize) {
         NSRange chunkRange = NSMakeRange(0, self.bufferData.length);
@@ -208,7 +226,7 @@ static NSInteger kBufferSize = 10 * 1024;
 }
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
-    NSLog(@"%s",__func__);
+    NSLog(@"ULVideoPlayer 请求完成 Error : %@",error);
     if (self.isCancelled) {
         return;
     }
@@ -225,17 +243,16 @@ static NSInteger kBufferSize = 10 * 1024;
     
     if (!error) {
         [self.loadingRequest finishLoading];
+        ///如果当前请求是最后一个请求，完成了全部资源下载后保存缓存配置文件，生成md5
+        long long currentRequestLength = self.loadingRequest.dataRequest.requestedOffset + self.loadingRequest.dataRequest.requestedLength;
+        if (currentRequestLength == self.sessionCache.config.contentLength) {
+            [self.sessionCache saveConfig];
+        }
     } else {
         [self.loadingRequest finishLoadingWithError:error];
     }
     /// 保存资源缓存
     [self.sessionCache save];
-    
-    ///如果当前请求是最后一个请求，完成了全部资源下载后保存缓存配置文件，生成md5
-    long long currentRequestLength = self.loadingRequest.dataRequest.requestedOffset + self.loadingRequest.dataRequest.requestedLength;
-    if (currentRequestLength == self.sessionCache.config.contentLength) {
-        [self.sessionCache saveConfig];
-    }
 }
 
 @end

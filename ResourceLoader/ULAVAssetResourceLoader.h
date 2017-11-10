@@ -18,5 +18,5 @@ static NSString *kCacheScheme = @"UPLiveMediaCache";
 
 /// 取消全部播放器请求
 - (void)cancel;
-
+- (void)removeCache;
 @end

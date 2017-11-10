@@ -24,10 +24,14 @@
 /// 这个不准，之前想用来判断缓存来着，先留着以后可能别的需求用吧
 @property (nonatomic, assign) unsigned long long downloadedContentLength;
 
+@property (nonatomic, strong) NSString *configFilePath;
+
 /// 通过（实际媒体资源路径）获取缓存配置文件，如果没有找到会返回一个新的
 + (instancetype)loadCacheConfigWithPath:(NSString *)filePath;
 
 /// 通过（实际媒体资源路径）保存配置
 - (void)saveWithPath:(NSString *)filePath;
+
+- (void)deleteConfigFile;
 
 @end

@@ -17,5 +17,5 @@
 
 - (void)cancel;
 - (void)resume;
-
+- (void)removeCache;
 @end
