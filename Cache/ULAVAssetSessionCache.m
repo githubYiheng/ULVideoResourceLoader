@@ -19,6 +19,7 @@
 
 @property (nonatomic, assign) long long cachefileSize;
 @property (nonatomic, assign) BOOL isCancel;
+@property (nonatomic, assign) BOOL cacheIsAvailable;
 
 @end
 
@@ -34,20 +35,15 @@
 #pragma mark - Open
 
 - (BOOL)cacheAvailable{
-    @try {
-        NSString *md5 = [[self.readFileHandle readDataToEndOfFile] MD5];
-        if ([md5 isEqualToString:self.config.md5]) {
-            return YES;
-        }
-        return NO;
-    } @catch (NSException *exception) {
-        NSLog(@"read cached data error %@",exception);
-    }
-    
+    return self.cacheIsAvailable;
 }
 
 - (void)save {
-    [self.writeFileHandle synchronizeFile];
+    @try {
+        [self.writeFileHandle synchronizeFile];
+    } @catch (NSException *exception) {
+        NSLog(@"save file error");
+    };
 }
 
 - (void)deleteCache {
@@ -87,6 +83,7 @@
     @try {
         [self.writeFileHandle seekToFileOffset:range.location];
         [self.writeFileHandle writeData:data];
+        [self.writeFileHandle synchronizeFile];
         
         self.config.downloadedContentLength += data.length;
         
@@ -149,22 +146,32 @@
     NSFileManager *fileManager = [NSFileManager defaultManager];
     NSError *error;
     NSString *cacheFolder = [self.cachePath stringByDeletingLastPathComponent];
+    
     if (![fileManager fileExistsAtPath:cacheFolder]) {
         [fileManager createDirectoryAtPath:cacheFolder
                withIntermediateDirectories:YES
                                 attributes:nil
                                      error:&error];
+    }else{
+        BOOL isDirectory = YES;
+        [fileManager fileExistsAtPath:cacheFolder isDirectory:&isDirectory];
+        
+        if (!isDirectory) {
+            [fileManager removeItemAtPath:cacheFolder error:&error];
+            [fileManager createDirectoryAtPath:cacheFolder
+                   withIntermediateDirectories:YES
+                                    attributes:nil
+                                         error:&error];
+        }
     }
     
     if (!error) {
         if (![[NSFileManager defaultManager] fileExistsAtPath:self.cachePath]) {
-            [[NSFileManager defaultManager] createFileAtPath:self.cachePath contents:nil attributes:nil];
+            [[NSFileManager defaultManager] createFileAtPath:self.cachePath contents:[NSData data] attributes:nil];
         }
         NSURL *fileURL = [NSURL fileURLWithPath:self.cachePath];
-        if (!error) {
-            self.readFileHandle = [NSFileHandle fileHandleForReadingFromURL:fileURL error:&error];
-            self.writeFileHandle = [NSFileHandle fileHandleForWritingToURL:fileURL error:&error];
-        }
+        self.readFileHandle = [NSFileHandle fileHandleForReadingFromURL:fileURL error:&error];
+        self.writeFileHandle = [NSFileHandle fileHandleForWritingToURL:fileURL error:&error];
     }
 }
 
@@ -180,8 +187,19 @@
         self.cachefileSize = [fileSizeNumber longLongValue];
         
         self.config = [ULAVAssetCacheFileConfig loadCacheConfigWithPath:self.cachePath];
+        
+        [self checkCache];
     }
     return self;
+}
+
+- (void)checkCache {
+    @try {
+        NSString *md5 = [[self.readFileHandle readDataToEndOfFile] MD5];
+        self.cacheIsAvailable = [md5 isEqualToString:self.config.md5];
+    } @catch (NSException *exception) {
+        NSLog(@"read cached data error %@",exception);
+    }
 }
 
 + (void)ul_clearCache{
